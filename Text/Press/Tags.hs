@@ -4,11 +4,11 @@ module Text.Press.Tags where
 import Text.JSON.Types
 
 import Data.Map (fromList, insert)
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import qualified Text.Parsec.Prim as Parsec.Prim
 import Text.Parsec.Combinator (manyTill, choice)
 import Control.Monad.Trans (lift, liftIO)
-import Control.Monad (forM_)
+import Control.Monad (forM_, liftM)
 
 import Text.Press.Parser
 import Control.Monad.Trans (lift, liftIO)
@@ -137,10 +137,15 @@ showFor target sourceExpr forNodes elseNodes = do
         runFor sourceValues
     where
         runFor [] = mapM_ render elseNodes
-        runFor vals = forM_ vals $ \x -> do
-            pushValues [(target, x)]
-            mapM_ render forNodes
-            popValues
+        runFor vals = do
+            let numIter = length vals
+            parentLoop <- liftM (lookupVar "forloop") getRenderState
+            forM_ (zip vals [0..]) $ \(x,i) -> do
+              let newVars = [(target, x), 
+                             ("forloop", makeLoopObject parentLoop numIter i)]
+              pushValues newVars
+              mapM_ render forNodes
+              popValues (length newVars)
 
         toList (Just (JSArray vals)) = vals
         toList otherwise = []
@@ -151,13 +156,24 @@ showFor target sourceExpr forNodes elseNodes = do
         pushValues kvpairs = do
             st <- getRenderState
             setRenderState $ st {
-                renderStateValues = values' : renderStateValues st
+                renderStateValues = values' ++ (renderStateValues st)
             }
-            where values' = JSObject $ toJSObject kvpairs
+            where values' = map (\kv -> JSObject . toJSObject $ [kv]) kvpairs
 
-        popValues = do
+        popValues n = do
             st <- getRenderState
             setRenderState $ st {
-                renderStateValues = tail $ renderStateValues st
+                renderStateValues = drop n $ renderStateValues st
             }
 
+        intToJS = JSRational False . fromIntegral
+
+        makeLoopObject parentLoop numIter i = JSObject . toJSObject $
+            [("parentloop", fromMaybe JSNull parentLoop)
+            ,("counter", intToJS (i+1))
+            ,("counter0", intToJS i)
+            ,("revcounter", intToJS (numIter-i))
+            ,("revcounter0", intToJS (numIter-i))
+            ,("first", JSBool (i==0))
+            ,("last", JSBool (i+1 == numIter))
+            ]
