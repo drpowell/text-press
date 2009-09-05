@@ -1,29 +1,32 @@
 
 module Text.Press.Parser where
+import Data.List (intersperse)
 import Data.Char (isSpace)
 import Data.Either (Either(..))
 import Data.Map (fromList, Map, lookup, insert)
 import Data.Maybe (catMaybes, listToMaybe)
 import Prelude hiding (lookup)
+import Numeric (readSigned, readFloat)
 
 import qualified Text.Parsec as Parsec
 import qualified Text.Parsec.Error as Parsec.Error
 import Text.Parsec.Char (string, anyChar, space, alphaNum, letter, oneOf)
 import Text.Parsec.String (parseFromFile)
-import Text.Parsec.Combinator (manyTill, many1, notFollowedBy, choice, eof, lookAhead, optional, sepEndBy)
+import Text.Parsec.Combinator (manyTill, many1, notFollowedBy, choice, eof, lookAhead, optional, sepEndBy, sepBy1, optionMaybe)
 import Text.Parsec.Pos (SourcePos, sourceName)
-import Text.Parsec.Prim ((<|>), try, Parsec, getPosition, getState)
+import Text.Parsec.Prim ((<|>), try, Parsec, getPosition, getState, many, getInput, setInput)
 import qualified Text.Parsec.Prim as Parsec.Prim
 
 import Text.Press.Types
 import Text.Press.Render 
+import Debug.Trace
 
 skipMany p = scan
     where scan = (p >> scan) <|> return ()
 
 intermediateParser = manyTill intermediate eof 
     
-intermediate = choice [try parseTag, try parseVar, someText]
+intermediate = choice [try parseTag, parseVar, someText]
 
 someText = withPos $ fmap PText someText' 
     where someText' = (choice [check $ string "{{", check $ string "{%", check eof]) <|> succ
@@ -47,14 +50,40 @@ parseTag = withPos $ do
     skipMany space
     rest <- manyTill anyChar (string "%}")
     return $ PTag name rest 
-    where 
 
 identifier = do 
     l <- choice [letter, oneOf "_"]
     s <- Parsec.Prim.many (choice [alphaNum, oneOf "_"])
     return (l:s)
 
-parseVar = withPos $ fmap PVar $ between "{{" "}}"
+-- | Parse a variable with optional fields separated by "."
+-- Also parse zero or more filters following the variable, each
+-- filter may have a single optional argument
+parseVar = withPos $ do
+   string "{{"
+   skipMany space
+   var <- identifier `sepBy1` (string ".")
+   let varStr = concat $ intersperse "." var
+   skipMany space
+   filters <- many parseFilter
+   skipMany space
+   string "}}"
+   return $ PVar varStr filters
+    where parseFilter = do string "|"
+                           skipMany space
+                           name <- identifier
+                           arg <- optionMaybe parseArg
+                           skipMany space
+                           return (name,arg)
+          parseArg = do string ":"
+                        choice [pStr, pVar, pNum]
+          pStr = fmap ExprStr $ between "\"" "\""
+          pVar = fmap ExprVar $ identifier
+          pNum =  do s <- getInput
+                     case readSigned readFloat s of
+                       [(n, s')] -> do { setInput s'; return $ ExprNum n }
+                       _         -> fail "Expected a number"
+
 
 parseFile :: Parser -> String -> IO (Either Parsec.ParseError Template)
 parseFile parser filename = do
@@ -79,8 +108,8 @@ tokensToTemplate = do
 pNode = choice [pVar, pTag, pText]
 
 pVar = do
-    (PVar x, pos) <- var 
-    return $ Just $ Var $ strip x
+    (PVar x filters, pos) <- var 
+    return $ Just $ Var (strip x) (map (\(f,a) -> (strip f, a)) filters)
 
 pText = do
     (PText x, pos) <- text
@@ -102,7 +131,7 @@ tagNamedOneOf name = token' $ toMaybe $ (isTagNamedOneOf name) . fst
 
 toMaybe f tokpos = if (f tokpos) then Just tokpos else Nothing
 
-isVar (PVar _) = True
+isVar (PVar _ _) = True
 isVar otherwise = False
 
 isTag (PTag _ _) = True
@@ -133,10 +162,11 @@ runSubParser parser state input = do
 
 spaces = many1 space
 
+runParseTagExpressions :: String -> TemplateParser [Expr]
 runParseTagExpressions input = runSubParser parseTagExpressions () input
     where parseTagExpressions = do 
               optional spaces
-              exprs <- (choice [try pStr, try pVar]) `sepEndBy` spaces
+              exprs <- (choice [pStr, pVar]) `sepEndBy` spaces
               return exprs 
           pStr = fmap ExprStr $ between "\"" "\""
           pVar = fmap ExprVar $ identifier

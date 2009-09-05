@@ -32,6 +32,7 @@ tests = [
         , testCase "Parse cycle 1" $ parses "{%cycle row1, row2, row3 as rowcolor%}"
         , testCase "Parse cycle 2" $ parses "{%cycle rowcolors %}"
         , testCase "Parse variable with filters" $ parses "{{x | strip}}"
+        , testCase "Parse variable with filters and argument" $ parses "{{x | strip:5}} {{y|cut:\" \"}}"
         ]
     , testGroup "Renderer" [
         testCase "Render a var" $ rendersTo "{{x}}" "{\"x\":1}" "1"
@@ -44,6 +45,14 @@ tests = [
         , testCase "Render for" $ rendersTo "{% for i in x %}{{i}}{% endfor %}" "{\"x\": []}" ""
         , testCase "Render for" $ rendersTo "{% for i in x %}{{i}}{% endfor %}" "{}" ""
         , testCase "Render for else" $ rendersTo "{% for i in x %}for{%else%}else{% endfor %}" "{}" "else"
+        , testCase "Render upper" $ rendersTo "{{x|upper}}" "{\"x\":\"A string\"}" "A STRING"
+        , testCase "Render upper|lower" $ rendersTo "{{x|upper|lower}}" "{\"x\":\"A string\"}" "a string"
+        , testCase "Render first" $ rendersTo "{{x|first}}" "{\"x\":[4,5,6]}" "4"
+        , testCase "Render length" $ rendersTo "{{x|length}} and {{y|length}}" "{\"x\":[4,5,6],\"y\":\"A string\"}" "3 and 8"
+        , testCase "Render cut" $ rendersTo "{{x|cut:\" \"}}" "{\"x\":\"A test string\"}" "Ateststring"
+        , testCase "Render join" $ rendersTo "{{x|join:\",\"}}" "{\"x\":[\"a\",\"b\",\"c\"]}" "a,b,c"
+        , testCase "Render join2" $ rendersTo "{{x|join:\":\"}}" "{\"x\":[4,5,6]}" "4:5:6"
+        
         ]
     ]
 

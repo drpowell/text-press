@@ -5,7 +5,7 @@ import Control.Monad.Writer.Lazy
 import Control.Monad.Error.Class (throwError)
 
 import Data.Map (Map, lookup, fromList, insert)
-import Data.Maybe (listToMaybe, catMaybes)
+import Data.Maybe (listToMaybe, catMaybes, mapMaybe)
 import Prelude hiding (lookup)
 import Data.List hiding (lookup)
 
@@ -13,16 +13,19 @@ import Text.JSON.Types
 import Text.JSON
 
 import Text.Press.Types
+import Text.Press.Filters
 
 emit s = tell [s]
 
 instance Render Node where 
     render (Text s) = emit s
-    render (Var var) = do
+    render (Var var filters) = do
         context <- getRenderState
+        let filterFunc = lookupFilters filters context
         case lookupVar var context of
             Nothing -> emit ""
-            Just jsval -> render jsval
+            Just jsval -> render $ filterFunc jsval
+
     render (Tag _ f) = render f 
 
 instance Render TagFunc where
@@ -33,10 +36,37 @@ instance Render JSValue where
     render (JSString x) = emit $ fromJSString x
     render other = emit $ (showJSValue other) ""
 
+
+-- | Given the list of 'Filter' and the 'RenderState' combine each
+-- filter, with any arguments (which my by variables that need to be
+-- looked up), and return a @JSValue -> JSValue@ function
+lookupFilters :: [Filter] -> RenderState -> (JSValue->JSValue)
+lookupFilters fnames context = 
+    let lookupDef name = lookup name defaultFilters
+
+        applyFilter (FilterNoArg filt) _ = filt
+        applyFilter (FilterArg filt) arg = filt arg
+
+        argToJS Nothing = Nothing
+        argToJS (Just expr) = exprToJS context expr
+
+        doFilter (name,arg) = do f <- lookupDef name
+                                 return $ applyFilter f (argToJS arg)
+
+    in foldl (.) id (reverse $ mapMaybe doFilter fnames)
+
+
+exprToJS :: RenderState -> Expr -> Maybe JSValue
+exprToJS _ (ExprStr s) = Just . JSString . toJSString $ s
+exprToJS _ (ExprNum n) = Just $ JSRational True (toRational n)
+exprToJS context (ExprVar var) = lookupVar var context
+
+lookupVarM :: String -> RenderT (Maybe JSValue)
 lookupVarM name = do 
     st <- getRenderState 
     return $ lookupVar name st
 
+lookupVar :: String -> RenderState -> Maybe JSValue
 lookupVar name (RenderState {renderStateValues = vals}) = 
     listToMaybe . catMaybes $ map (getf name) vals
 
@@ -48,6 +78,7 @@ split tok splitme = unfoldr (sp1 tok) splitme
                       Just p -> Just (take ((length p) - (length t)) p,
                                       drop (length p) s)
 
+getf :: String -> JSValue -> Maybe JSValue
 getf name a = getf' names (Just a)
     where 
         names = split "." name 

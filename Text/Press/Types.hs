@@ -39,7 +39,7 @@ setRenderState = put
 
 data TagFunc = TagFunc RenderT_
 
-data Node = Var String
+data Node = Var String [Filter]
     | Tag TagName TagFunc
     | Text String
     deriving (Show)
@@ -72,9 +72,14 @@ type ParserState = (Parser, Template)
 instance Show TagType where
     show s = "TagType ?"
 
+data FilterFunc = FilterNoArg (JSValue->JSValue)
+                | FilterArg (Maybe JSValue -> JSValue -> JSValue)
+
+type Filter = (String, Maybe Expr)
+
 data Token = PText String 
     | PTag TagName String
-    | PVar String
+    | PVar String [Filter]
     deriving (Ord, Show, Eq)
 
 data Parser = Parser {
