@@ -4,11 +4,12 @@ module Text.Press.Tags where
 import Text.JSON.Types
 
 import Data.Map (fromList, insert)
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe, isJust)
 import qualified Text.Parsec.Prim as Parsec.Prim
 import Text.Parsec.Combinator (manyTill, choice)
 import Control.Monad.Trans (lift, liftIO)
 import Control.Monad (forM_, liftM)
+import Debug.Trace
 
 import Text.Press.Parser
 import Control.Monad.Trans (lift, liftIO)
@@ -139,10 +140,10 @@ showFor target sourceExpr forNodes elseNodes = do
         runFor [] = mapM_ render elseNodes
         runFor vals = do
             let numIter = length vals
-            parentLoop <- liftM (lookupVar "forloop") getRenderState
+            parentLoop <- liftM (lookupVar "loop") getRenderState
             forM_ (zip vals [0..]) $ \(x,i) -> do
               let newVars = [(target, x), 
-                             ("forloop", makeLoopObject parentLoop numIter i)]
+                             ("loop", makeLoopObject parentLoop numIter i)]
               pushValues newVars
               mapM_ render forNodes
               popValues (length newVars)
@@ -166,14 +167,16 @@ showFor target sourceExpr forNodes elseNodes = do
                 renderStateValues = drop n $ renderStateValues st
             }
 
-        intToJS = JSRational False . fromIntegral
 
         makeLoopObject parentLoop numIter i = JSObject . toJSObject $
             [("parentloop", fromMaybe JSNull parentLoop)
-            ,("counter", intToJS (i+1))
-            ,("counter0", intToJS i)
-            ,("revcounter", intToJS (numIter-i))
-            ,("revcounter0", intToJS (numIter-i))
+            ,("length", intToJS numIter)
+            ,("index", intToJS (i+1))
+            ,("index0", intToJS i)
+            ,("revindex", intToJS (numIter-i))
+            ,("revindex0", intToJS (numIter-i))
             ,("first", JSBool (i==0))
             ,("last", JSBool (i+1 == numIter))
             ]
+
+intToJS = JSRational False . fromIntegral

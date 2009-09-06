@@ -72,10 +72,9 @@ type ParserState = (Parser, Template)
 instance Show TagType where
     show s = "TagType ?"
 
-data FilterFunc = FilterNoArg (JSValue->JSValue)
-                | FilterArg (Maybe JSValue -> JSValue -> JSValue)
+type FilterFunc = ([JSValue] -> JSValue -> JSValue)
 
-type Filter = (String, Maybe Expr)
+type Filter = (String, [Expr])
 
 data Token = PText String 
     | PTag TagName String

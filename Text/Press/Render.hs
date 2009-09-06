@@ -5,7 +5,7 @@ import Control.Monad.Writer.Lazy
 import Control.Monad.Error.Class (throwError)
 
 import Data.Map (Map, lookup, fromList, insert)
-import Data.Maybe (listToMaybe, catMaybes, mapMaybe)
+import Data.Maybe (listToMaybe, catMaybes, mapMaybe, fromMaybe)
 import Prelude hiding (lookup)
 import Data.List hiding (lookup)
 
@@ -36,24 +36,21 @@ instance Render JSValue where
     render (JSString x) = emit $ fromJSString x
     render other = emit $ (showJSValue other) ""
 
+instance Render Expr where
+    render x = do st <- getRenderState 
+                  render $ fromMaybe JSNull (exprToJS st x)
 
 -- | Given the list of 'Filter' and the 'RenderState' combine each
 -- filter, with any arguments (which my by variables that need to be
 -- looked up), and return a @JSValue -> JSValue@ function
 lookupFilters :: [Filter] -> RenderState -> (JSValue->JSValue)
 lookupFilters fnames context = 
-    let lookupDef name = lookup name defaultFilters
-
-        applyFilter (FilterNoArg filt) _ = filt
-        applyFilter (FilterArg filt) arg = filt arg
-
-        argToJS Nothing = Nothing
-        argToJS (Just expr) = exprToJS context expr
-
-        doFilter (name,arg) = do f <- lookupDef name
-                                 return $ applyFilter f (argToJS arg)
-
-    in foldl (.) id (reverse $ mapMaybe doFilter fnames)
+    foldl (.) id (reverse $ mapMaybe doFilter fnames)
+    where
+      lookupDef name = lookup name defaultFilters
+      argToJS expr = fromMaybe JSNull (exprToJS context expr)
+      doFilter (name,args) = do f <- lookupDef name
+                                return $ f (map argToJS args)
 
 
 exprToJS :: RenderState -> Expr -> Maybe JSValue

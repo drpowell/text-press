@@ -4,7 +4,7 @@ import Data.List (intersperse)
 import Data.Char (isSpace)
 import Data.Either (Either(..))
 import Data.Map (fromList, Map, lookup, insert)
-import Data.Maybe (catMaybes, listToMaybe)
+import Data.Maybe (catMaybes, listToMaybe, fromMaybe)
 import Prelude hiding (lookup)
 import Numeric (readSigned, readFloat)
 
@@ -72,11 +72,14 @@ parseVar = withPos $ do
     where parseFilter = do string "|"
                            skipMany space
                            name <- identifier
-                           arg <- optionMaybe parseArg
+                           args <- optionMaybe parseArgs
                            skipMany space
-                           return (name,arg)
-          parseArg = do string ":"
-                        choice [pStr, pVar, pNum]
+                           return (name, fromMaybe [] args)
+          parseArgs = do string "("
+                         args <- parseArg `sepBy1` (string ",")
+                         string ")"
+                         return args
+          parseArg = do choice [pStr, pVar, pNum]
           pStr = fmap ExprStr $ between "\"" "\""
           pVar = fmap ExprVar $ identifier
           pNum =  do s <- getInput
