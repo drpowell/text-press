@@ -26,7 +26,7 @@ skipMany p = scan
 
 intermediateParser = manyTill intermediate eof 
     
-intermediate = choice [try parseTag, parseVar, someText]
+intermediate = choice [parseTag, parseExprBlock, someText]
 
 someText = withPos $ fmap PText someText' 
     where someText' = (choice [check $ string "{{", check $ string "{%", check eof]) <|> succ
@@ -44,7 +44,7 @@ withPos action = do
     return (result, p)
 
 parseTag = withPos $ do
-    string "{%"
+    try $ string "{%"
     skipMany space
     name <- identifier
     skipMany space
@@ -57,21 +57,32 @@ identifier = do
     return (l:s)
 
 -- | Parse a variable with optional fields separated by "."
+parseVar = do
+  var <- identifier `sepBy1` (string ".")
+  let varStr = concat $ intersperse "." var
+  return varStr
+
+parseExprBlock :: Parsec.Prim.Parsec String () (Token, SourcePos)
+parseExprBlock = withPos $ do
+   try $ string "{{"
+   expr <- parseExpr
+   string "}}"
+   return expr
+
+-- | Parse a variable with optional fields separated by "."
 -- Also parse zero or more filters following the variable, each
--- filter may have a single optional argument
-parseVar = withPos $ do
-   string "{{"
+-- filter may have optional arguments
+parseExpr :: Parsec.Prim.Parsec String () Token
+parseExpr = do
    skipMany space
-   var <- identifier `sepBy1` (string ".")
-   let varStr = concat $ intersperse "." var
+   varStr <- parseVar
    skipMany space
    filters <- many parseFilter
    skipMany space
-   string "}}"
    return $ PVar varStr filters
     where parseFilter = do string "|"
                            skipMany space
-                           name <- identifier
+                           name <- parseVar
                            args <- optionMaybe parseArgs
                            skipMany space
                            return (name, fromMaybe [] args)
@@ -81,7 +92,7 @@ parseVar = withPos $ do
                          return args
           parseArg = do choice [pStr, pVar, pNum]
           pStr = fmap ExprStr $ between "\"" "\""
-          pVar = fmap ExprVar $ identifier
+          pVar = fmap ExprVar $ parseVar
           pNum =  do s <- getInput
                      case readSigned readFloat s of
                        [(n, s')] -> do { setInput s'; return $ ExprNum n }
@@ -172,6 +183,6 @@ runParseTagExpressions input = runSubParser parseTagExpressions () input
               exprs <- (choice [pStr, pVar]) `sepEndBy` spaces
               return exprs 
           pStr = fmap ExprStr $ between "\"" "\""
-          pVar = fmap ExprVar $ identifier
+          pVar = fmap ExprVar $ parseVar
 
 

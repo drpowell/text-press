@@ -8,12 +8,19 @@ import Test.Framework.Providers.QuickCheck2 (testProperty)
 import Test.QuickCheck
 import Test.HUnit
 
+import System.Console.ANSI (showCursor)
+import Control.Exception (bracket)
+
 import Text.Press.Parser
 import Text.Press.Run
 import Text.Press.Render
 import Text.JSON (decodeStrict, Result(..))
-
-main = defaultMain tests
+    
+main = do
+  bracket
+    (return ())
+    (\_ -> putStrLn "" >> showCursor)   -- Otherwise I don't get my cursor back for some reason
+    (\_ -> defaultMain tests)
 
 tests = [
     testGroup "Parser" [
